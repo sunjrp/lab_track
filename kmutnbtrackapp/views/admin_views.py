@@ -16,8 +16,15 @@ from django.contrib import messages
 from django.core import management
 from django.core.mail import EmailMessage
 from django.core.paginator import Paginator
+from django.contrib.sites.shortcuts import get_current_site
 from django.http import HttpResponseRedirect, HttpResponse
+from django.utils.http import urlsafe_base64_decode
 from django.shortcuts import redirect
+from django.utils.encoding import force_bytes
+from django.contrib.auth import get_user_model
+from django.utils.http import urlsafe_base64_encode
+from django.contrib.auth.tokens import default_token_generator
+from django.contrib.auth.models import Group, Permission
 
 from kmutnbtrackapp.dashboard import *
 from kmutnbtrackapp.views.help import *
@@ -74,7 +81,6 @@ def history_search(request, page=1):
 @supervisor_login_required
 def view_lab(request, lab_hash):
     this_lab = Lab.objects.get(hash=lab_hash)
-    print(request.user.groups.filter(name=this_lab.name))
     if not (request.user.is_superuser or request.user.groups.filter(name=this_lab.name).exists()):
         return render(request, 'Page/error.html', {"error_message": "Permission denied"})
     now_datetime = datetime.datetime.now(tz)
@@ -82,13 +88,15 @@ def view_lab(request, lab_hash):
     current_people = History.objects.filter(lab=this_lab,
                                             checkout__gte=now_datetime,
                                             checkout__lte=midnight_time)
-    if request.GET.get('confirm') == 'true':
+    if request.method == "POST" and request.POST.get('confirm', '') == "ยืนยัน":
         for person in current_people:
             out_local_time = datetime.datetime.now(tz)
             person.checkout = out_local_time
             person.save()
         messages.info(request, 'All the people in %s has been cleared successfully' % this_lab.name)
         return HttpResponseRedirect('/admin/kmutnbtrackapp/lab/')
+    elif request.method == "POST" and request.POST.get('confirm', '') != "ยืนยัน":
+        return render(request, 'admin/notify_confirm.html', {'clear_lab': True, 'this_lab': this_lab, 'fail': True})
     return render(request, 'admin/view_lab.html', {'this_lab': this_lab, 'shown_history': current_people})
 
 
@@ -201,15 +209,22 @@ def export_risk_csv(request):
 
 
 @superuser_login_required
-def notify_confirm(request):
-    mode = request.GET.get('mode', '')
-    keyword = request.GET.get('keyword', '')
-    if keyword != "":
-        return render(request, 'admin/notify_confirm.html', {'mode': mode,
-                                                             'keyword': keyword,
-                                                             })
-    else:
-        return redirect(risk_people_search)
+def notify_confirm(request, where):
+    lab_hash = request.GET.get('lab_hash', '')
+    if not lab_hash == '':
+        this_lab = Lab.objects.get(hash=lab_hash)
+    if where == 'risk_people_search':
+        mode = request.GET.get('mode', '')
+        keyword = request.GET.get('keyword', '')
+        if keyword != "":
+            return render(request, 'admin/notify_confirm.html', {'mode': mode,
+                                                                 'keyword': keyword,
+                                                                 'send_email': True,
+                                                                 })
+        else:
+            return redirect(risk_people_search)
+    elif where == 'clear_lab':
+        return render(request, 'admin/notify_confirm.html', {'clear_lab': True, 'this_lab': this_lab})
 
 
 @superuser_login_required
@@ -255,6 +270,12 @@ def notify_user(request, mode, keyword):
         return render(request, 'admin/notify_status.html',
                       {'notify_status': True,
                        })
+    else:
+        return render(request, 'admin/notify_confirm.html', {'mode': mode,
+                                                             'keyword': keyword,
+                                                             'send_email': True,
+                                                             'fail': True,
+                                                             })
 
 
 @supervisor_login_required
@@ -305,3 +326,65 @@ def backup(request):
 
     messages.info(request, 'Database has been backed up successfully!')
     return HttpResponseRedirect('/admin')
+
+
+def auth_head(request, uid_b64, token):
+    try:
+        uid = urlsafe_base64_decode(uid_b64).decode()
+        user = get_user_model()._default_manager.get(pk=uid)
+    except(TypeError, ValueError, OverflowError, User.DoesNotExist):
+        user = None
+    if user is not None and default_token_generator.check_token(user, token):
+        new_lab_data = LabPending.objects.get(staff_user=user)
+        if new_lab_data.head_email is None:
+            auth_staff(request, uid_b64, token)
+            return HttpResponseRedirect('/admin/')
+        else:
+            current_site = get_current_site(request)
+            mail_subject = "เราได้รับคำขอสร้างแลป " + new_lab_data.name
+            lab_head = {new_lab_data.head_email: {'first_name': new_lab_data.lab_head_first_name,
+                                                  'last_name': new_lab_data.lab_head_last_name,
+                                                  'staff_first_name': user.first_name, 'staff_last_name': user.last_name,
+                                                  'lab_name': new_lab_data.name,
+                                                  'uid': urlsafe_base64_encode(force_bytes(user.pk)),
+                                                  'token': default_token_generator.make_token(user),
+                                                  'domain': current_site.domain}}
+            email = EmailMessage(mail_subject, to=[new_lab_data.head_email])
+            email.template_id = 'lab-send-head'
+            email.merge_data = lab_head
+            email.send()
+            success_message = "แลป " + new_lab_data.name + " ได้รับการยืนยันแล้ว"
+            return render(request, 'Page/success.html', {'success_message': success_message})
+    else:
+        return HttpResponse('ลิ้งค์ยินยันผิดพลาด ให้รีบแจ้งผู้ส่งคำขอโดยด่วน')
+
+
+def auth_staff(request, uid_b64, token):
+    try:
+        uid = urlsafe_base64_decode(uid_b64).decode()
+        user = get_user_model()._default_manager.get(pk=uid)
+    except(TypeError, ValueError, OverflowError, User.DoesNotExist):
+        user = None
+    if user is not None and default_token_generator.check_token(user, token):
+        user.is_active = True
+        user.is_staff = True
+        permission = Permission.objects.get(name="Can view lab")
+        user.user_permissions.add(permission)
+        user.save()
+        Person.objects.create(user=user, first_name=user.first_name, last_name=user.last_name, is_student=False)
+        new_lab_data = LabPending.objects.get(staff_user=user)
+        Lab.objects.create(name=new_lab_data.name, max_number_of_people=new_lab_data.max)
+        new_group = Group.objects.create(name=new_lab_data.name)
+        new_group.user_set.add(user)
+        new_lab_data.delete()
+
+        mail_subject = new_lab_data.name + " ได้รับการยืนยีนแล้ว"
+        lab_activated = {user.email: {'username': user.username, 'lab_name': new_lab_data.name}}
+        email = EmailMessage(mail_subject, to=[user.email])
+        email.template_id = 'lab-create-confirm'
+        email.merge_data = lab_activated
+        email.send()
+        messages.info(request, '%s has been activated successfully' % new_lab_data.name)
+        return HttpResponseRedirect('/admin/')
+    else:
+        return HttpResponse('ลิ้งค์ยินยันผิดพลาด ให้รีบแจ้งผู้ส่งคำขอโดยด่วน')

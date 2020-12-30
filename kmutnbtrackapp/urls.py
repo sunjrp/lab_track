@@ -6,8 +6,7 @@ from . import views
 app_name = "kmutnbtrackapp"
 
 urlpatterns = [
-    path('', views.home),
-    path('2/', views.joke),
+    path('', views.home, name='home'),
     path('signup/<str:lab_hash>/', views.signup_api, name='signup'),
     path('login/', views.login_api, name="login"),
     path("logout/", views.logout_api, name="logout"),
@@ -16,5 +15,5 @@ urlpatterns = [
     path('home/', views.home, name='home'),
     path('check_in/<str:lab_hash>/', views.check_in, name='check_in'),
     path('check_out/<str:lab_hash>/', views.check_out, name='check_out'),
-    path('admin/clear/<str:lab_hash>/', views.view_lab, name='view_lab'),
+    path('api/addfeedback/', views.add_feedback_api, name='add_feedback')
 ]

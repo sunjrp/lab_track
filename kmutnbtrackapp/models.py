@@ -26,6 +26,7 @@ class Person(models.Model):
     email = models.EmailField(default="", blank=True)
     student_id = models.CharField(max_length=13, default="", blank=True)
     is_student = models.BooleanField(default=False)
+    ask_feedback = models.BooleanField(default=False)
 
     def __str__(self):
         return self.first_name + " " + self.last_name
@@ -41,3 +42,24 @@ class History(models.Model):
 
     def __str__(self):
         return self.lab.name
+
+
+class LabPending(models.Model):
+    staff_user = models.ForeignKey(User, on_delete=models.CASCADE)
+    name = models.CharField(max_length=60, blank=True, null=True)
+    max = models.IntegerField(blank=True, default=20)
+    lab_head_first_name = models.CharField(max_length=60, blank=True, null=True)
+    lab_head_last_name = models.CharField(max_length=60, blank=True, null=True)
+    head_email = models.CharField(max_length=60, blank=True, null=True)
+
+    def __str__(self):
+        return self.name
+
+
+class Feedback(models.Model):
+    star = models.IntegerField(default=0)
+    text = models.TextField(default="")
+    is_student = models.BooleanField(default=False)
+
+    def __str__(self):
+        return self.text

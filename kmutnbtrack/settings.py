@@ -50,6 +50,7 @@ INSTALLED_APPS = [
     'social_django',
     'dbbackup',
     'anymail',
+    'captcha',
 ]
 
 MIDDLEWARE = [
@@ -60,6 +61,7 @@ MIDDLEWARE = [
     'django.contrib.auth.middleware.AuthenticationMiddleware',
     'django.contrib.messages.middleware.MessageMiddleware',
     'django.middleware.clickjacking.XFrameOptionsMiddleware',
+    'kmutnbtrackapp.views.MySocialAuthExceptionMiddleware',
 ]
 
 ROOT_URLCONF = 'kmutnbtrack.urls'
@@ -79,6 +81,11 @@ TEMPLATES = [
         },
     },
 ]
+
+ADMINS = [('ConyCodes Logs', 'logs@cony.codes'),
+          ('Nattakrit Jatupattaradit', 's6101012610037@email.kmutnb.ac.th'),
+          ('Pakkapong Rattanapukdeekun', 's6101012630119@email.kmutnb.ac.th'),
+          ('Pasakorn Phareyart', 's6101012630135@email.kmutnb.ac.th')]
 
 WSGI_APPLICATION = 'kmutnbtrack.wsgi.application'
 SESSION_ENGINE = 'django.contrib.sessions.backends.file'
@@ -125,6 +132,9 @@ AUTHENTICATION_BACKENDS = (
 
 SOCIAL_AUTH_GOOGLE_OAUTH2_KEY = os.environ['SOCIAL_AUTH_GOOGLE_OAUTH2_KEY']
 SOCIAL_AUTH_GOOGLE_OAUTH2_SECRET = os.environ['SOCIAL_AUTH_GOOGLE_OAUTH2_SECRET']
+
+RECAPTCHA_PUBLIC_KEY = os.environ['RECAPTCHA_PUBLIC_KEY']
+RECAPTCHA_PRIVATE_KEY = os.environ['RECAPTCHA_PRIVATE_KEY']
 
 SOCIAL_AUTH_PIPELINE = (
     'social_core.pipeline.social_auth.social_details',
